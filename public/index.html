@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lichočár Online</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a1e24; color: white; padding: 20px; }
+        #lobby, #game { max-width: 600px; margin: 0 auto; background: #2a303c; padding: 20px; border-radius: 8px; }
+        .hidden { display: none; }
+        input, button { padding: 10px; font-size: 1rem; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #7f8c8d; }
+    </style>
+</head>
+<body>
+
+    <div id="lobby">
+        <h1>😈 Lichočár Online</h1>
+        <label>Jméno hráče:</label>
+        <input type="text" id="player-name" placeholder="Zadejte jméno">
+        <label>Kód místnosti:</label>
+        <input type="text" id="room-id" value="stul1">
+        <button id="btn-join">Připojit se do místnosti</button>
+
+        <div id="waiting-room" class="hidden" style="margin-top: 20px;">
+            <h3>Připojení hráči:</h3>
+            <ul id="player-list"></ul>
+            <button id="btn-start" disabled>Spustit hru</button>
+        </div>
+    </div>
+
+    <div id="game" class="hidden">
+        <h2>Hra probíhá</h2>
+        <div id="status">Čekání na stav hry...</div>
+        <div id="hand-info" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentRoom = '';
+
+        document.getElementById('btn-join').onclick = () => {
+            const name = document.getElementById('player-name').value.trim();
+            currentRoom = document.getElementById('room-id').value.trim();
+            if (!name || !currentRoom) return alert('Zadejte jméno i kód místnosti');
+
+            socket.emit('joinRoom', { roomId: currentRoom, playerName: name });
+        };
+
+        document.getElementById('btn-start').onclick = () => {
+            socket.emit('startGame', currentRoom);
+        };
+
+        socket.on('roomUpdated', ({ players, canStart }) => {
+            document.getElementById('waiting-room').classList.remove('hidden');
+            const list = document.getElementById('player-list');
+            list.innerHTML = players.map(p => `<li>${p.name}</li>`).join('');
+            document.getElementById('btn-start').disabled = !canStart;
+        });
+
+        socket.on('gameState', (state) => {
+            document.getElementById('lobby').classList.add('hidden');
+            document.getElementById('game').classList.remove('hidden');
+            
+            const activePlayer = state.players[state.activePlayerIdx];
+            document.getElementById('status').innerHTML = `Na tahu je: <b>${activePlayer ? activePlayer.name : ''}</b><br>Fáze: ${state.phase}`;
+            document.getElementById('hand-info').innerText = `Máte v ruce ${state.myHand.length} karet.`;
+        });
+
+        socket.on('errorMsg', (msg) => alert(msg));
+    </script>
+</body>
+</html>
