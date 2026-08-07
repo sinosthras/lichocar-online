@@ -6,70 +6,223 @@
     <title>Lichočár Online</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { font-family: sans-serif; background: #1a1e24; color: white; padding: 20px; }
-        #lobby, #game { max-width: 600px; margin: 0 auto; background: #2a303c; padding: 20px; border-radius: 8px; }
+        body { font-family: sans-serif; background: #12161c; color: #f0f0f0; margin: 0; padding: 20px; }
+        .card { width: 60px; height: 90px; background: white; color: black; border-radius: 6px; display: inline-flex; flex-direction: column; justify-content: space-between; padding: 5px; box-sizing: border-box; cursor: grab; user-select: none; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.3); position: relative; }
+        .card.red { border: 2px solid #e74c3c; color: #c0392b; }
+        .card.blue { border: 2px solid #3498db; color: #2980b9; }
+        .card.green { border: 2px solid #2ecc71; color: #27ae60; }
+        .card.yellow { border: 2px solid #f1c40f; color: #d35400; }
+        .card.lichocar { background: #333; color: #fff; border: 2px solid #9b59b6; }
+        
+        .card.valid-set { box-shadow: 0 0 10px 3px #2ecc71; }
+        .card.invalid-set { box-shadow: 0 0 10px 3px #e74c3c; opacity: 0.8; }
+
+        .screen { max-width: 800px; margin: 0 auto; background: #1e2530; padding: 25px; border-radius: 12px; }
         .hidden { display: none; }
-        input, button { padding: 10px; font-size: 1rem; margin: 5px 0; width: 100%; box-sizing: border-box; }
-        button { background: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #7f8c8d; }
+        
+        input, select, button { padding: 10px; font-size: 1rem; margin: 8px 0; width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid #444; background: #2a3442; color: white; }
+        
+        /* Aktivní vs Zašedlé tlačítko */
+        button.action-btn { background: #27ae60; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button.action-btn:disabled { background: #2a3442; color: #666; border-color: #333; cursor: not-allowed; opacity: 0.4; }
+
+        .setup-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+        .setup-row label { flex: 1; }
+        .setup-row select { flex: 1; }
+
+        #bank-container { display: flex; gap: 10px; min-height: 110px; background: #161b22; padding: 15px; border-radius: 8px; align-items: center; border: 2px dashed #444; overflow-x: auto; }
+        .drop-slot { width: 20px; height: 90px; background: rgba(255,255,255,0.05); border-radius: 4px; transition: 0.2s; }
+        .drop-slot.drag-over { background: rgba(46, 204, 113, 0.4); width: 40px; }
+
+        #hand-container { display: flex; gap: 10px; padding: 15px; background: #161b22; border-radius: 8px; min-height: 110px; overflow-x: auto; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-    <div id="lobby">
-        <h1>😈 Lichočár Online</h1>
-        <label>Jméno hráče:</label>
-        <input type="text" id="player-name" placeholder="Zadejte jméno">
+    <!-- LOBBY OBRAZOVKA -->
+    <div id="lobby-screen" class="screen">
+        <h1>😈 Lichočár Online – Nastavení hry</h1>
+        <label>Vaše jméno:</label>
+        <input type="text" id="player-name" value="Lord">
+        
         <label>Kód místnosti:</label>
-        <input type="text" id="room-id" value="stul1">
-        <button id="btn-join">Připojit se do místnosti</button>
+        <input type="text" id="room-id" value="stul-1">
 
-        <div id="waiting-room" class="hidden" style="margin-top: 20px;">
-            <h3>Připojení hráči:</h3>
-            <ul id="player-list"></ul>
-            <button id="btn-start" disabled>Spustit hru</button>
+        <label>Celkový počet hráčů:</label>
+        <select id="total-players" onchange="updatePlayerSlots()">
+            <option value="2">2 hráči</option>
+            <option value="3">3 hráči</option>
+            <option value="4" selected>4 hráči</option>
+        </select>
+
+        <h3>Obsazení pozic (Hráč vs Bot)</h3>
+        <div id="player-slots-config">
+            <!-- Dynamicky generováno -->
         </div>
+
+        <button class="action-btn" onclick="joinAndStart()">Vstoupit do hry</button>
     </div>
 
-    <div id="game" class="hidden">
-        <h2>Hra probíhá</h2>
-        <div id="status">Čekání na stav hry...</div>
-        <div id="hand-info" style="margin-top: 20px;"></div>
+    <!-- HERNÍ OBRAZOVKA -->
+    <div id="game-screen" class="screen hidden">
+        <h2 id="game-status">Na tahu: ...</h2>
+        
+        <div style="margin-bottom: 15px;">
+            <h3>Středový stůl / Nabídka:</h3>
+            <div id="bank-container" ondragover="event.preventDefault()" ondrop="handleBankDrop(event)">
+                <!-- Zde budou sloty a karty v nabídce -->
+            </div>
+        </div>
+
+        <div>
+            <h3>Vaše ruka:</h3>
+            <div id="hand-container">
+                <!-- Zde budou karty hráče -->
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; display: flex; gap: 10px;">
+            <button id="btn-end-turn" class="action-btn" disabled onclick="endTurn()">Ukončit tah / Vzít zbylé karty</button>
+        </div>
     </div>
 
     <script>
         const socket = io();
         let currentRoom = '';
+        let myHand = [];
+        let bankCards = [];
+        let draggedCardId = null;
 
-        document.getElementById('btn-join').onclick = () => {
+        function updatePlayerSlots() {
+            const count = parseInt(document.getElementById('total-players').value);
+            const container = document.getElementById('player-slots-config');
+            container.innerHTML = '';
+            
+            for (let i = 0; i < count; i++) {
+                const row = document.createElement('div');
+                row.className = 'setup-row';
+                row.innerHTML = `
+                    <label>Pozice ${i + 1} ${i === 0 ? '(Vy)' : ''}:</label>
+                    <select id="slot-type-${i}" ${i === 0 ? 'disabled' : ''}>
+                        <option value="human" ${i === 0 ? 'selected' : ''}>Živý hráč</option>
+                        <option value="bot" ${i > 0 ? 'selected' : ''}>Bot</option>
+                    </select>
+                `;
+                container.appendChild(row);
+            }
+        }
+        updatePlayerSlots();
+
+        function joinAndStart() {
             const name = document.getElementById('player-name').value.trim();
             currentRoom = document.getElementById('room-id').value.trim();
-            if (!name || !currentRoom) return alert('Zadejte jméno i kód místnosti');
+            const totalPlayers = parseInt(document.getElementById('total-players').value);
+            
+            let playerTypes = [];
+            for (let i = 0; i < totalPlayers; i++) {
+                playerTypes.push(document.getElementById(`slot-type-${i}`).value);
+            }
 
-            socket.emit('joinRoom', { roomId: currentRoom, playerName: name });
-        };
+            if (!name || !currentRoom) return alert('Vyplňte jméno a kód místnosti.');
 
-        document.getElementById('btn-start').onclick = () => {
-            socket.emit('startGame', currentRoom);
-        };
-
-        socket.on('roomUpdated', ({ players, canStart }) => {
-            document.getElementById('waiting-room').classList.remove('hidden');
-            const list = document.getElementById('player-list');
-            list.innerHTML = players.map(p => `<li>${p.name}</li>`).join('');
-            document.getElementById('btn-start').disabled = !canStart;
-        });
+            socket.emit('setupGame', { roomId: currentRoom, playerName: name, totalPlayers, playerTypes });
+            
+            document.getElementById('lobby-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+        }
 
         socket.on('gameState', (state) => {
-            document.getElementById('lobby').classList.add('hidden');
-            document.getElementById('game').classList.remove('hidden');
-            
-            const activePlayer = state.players[state.activePlayerIdx];
-            document.getElementById('status').innerHTML = `Na tahu je: <b>${activePlayer ? activePlayer.name : ''}</b><br>Fáze: ${state.phase}`;
-            document.getElementById('hand-info').innerText = `Máte v ruce ${state.myHand.length} karet.`;
+            myHand = state.myHand;
+            bankCards = state.bank || [];
+            renderGame(state);
         });
 
-        socket.on('errorMsg', (msg) => alert(msg));
+        function renderGame(state) {
+            document.getElementById('game-status').innerText = `Fáze: ${state.phase}`;
+            
+            // Vykreslení ruky
+            const handEl = document.getElementById('hand-container');
+            handEl.innerHTML = '';
+            myHand.forEach(card => {
+                const el = createCardElement(card);
+                el.draggable = true;
+                el.ondragstart = (e) => { draggedCardId = card.id; };
+                handEl.appendChild(el);
+            });
+
+            // Vykreslení banku se sloty pro Drag and Drop
+            const bankEl = document.getElementById('bank-container');
+            bankEl.innerHTML = '';
+            
+            // Vložíme počáteční slot pro přetažení doleva
+            bankEl.appendChild(createDropSlot(0));
+
+            bankCards.forEach((card, idx) => {
+                const cardEl = createCardElement(card);
+                // Detekce sad (zde zjednodušená ukázka realtime validace)
+                cardEl.classList.add(isCardInValidSet(card, bankCards) ? 'valid-set' : 'invalid-set');
+                bankEl.appendChild(cardEl);
+                bankEl.appendChild(createDropSlot(idx + 1));
+            });
+
+            // Dynamická stavová tlačítka (aktivní pouze pokud je co odeslat)
+            const btnEnd = document.getElementById('btn-end-turn');
+            btnEnd.disabled = bankCards.length === 0;
+        }
+
+        function createCardElement(card) {
+            const div = document.createElement('div');
+            div.className = `card ${card.suit}`;
+            if (card.type === 'lichocar') {
+                div.innerHTML = `<span>JOKER</span><center>😈</center><span>Lich</span>`;
+            } else {
+                div.innerHTML = `<span>${card.val}</span><center>${getSuitSymbol(card.suit)}</center><span style="align-self: flex-end">${card.val}</span>`;
+            }
+            return div;
+        }
+
+        function getSuitSymbol(suit) {
+            if (suit === 'red') return '♥';
+            if (suit === 'blue') return '♠';
+            if (suit === 'green') return '♦';
+            if (suit === 'yellow') return '♣';
+            return '';
+        }
+
+        function createDropSlot(index) {
+            const slot = document.createElement('div');
+            slot.className = 'drop-slot';
+            slot.ondragover = (e) => { e.preventDefault(); slot.classList.add('drag-over'); };
+            slot.dragleave = () => slot.classList.remove('drag-over');
+            slot.ondrop = (e) => {
+                e.preventDefault();
+                slot.classList.remove('drag-over');
+                if (draggedCardId) {
+                    insertCardIntoBank(draggedCardId, index);
+                }
+            };
+            return slot;
+        }
+
+        function insertCardIntoBank(cardId, index) {
+            const cardIdx = myHand.findIndex(c => c.id === cardId);
+            if (cardIdx === -1) return;
+            const card = myHand.splice(cardIdx, 1)[0];
+            bankCards.splice(index, 0, card);
+            
+            // Odešleme na server stav
+            socket.emit('playerAction', { roomId: currentRoom, actionData: { bankCards, myHand } });
+            renderGame({ phase: 'DOPLŇOVÁNÍ NABÍDKY', myHand, bank: bankCards });
+        }
+
+        function isCardInValidSet(card, allCards) {
+            // Základní placeholder pravidlo pro realtime zobrazení validity sady
+            return allCards.length >= 3; 
+        }
+
+        function endTurn() {
+            alert('Tah byl ukončen a neplatné karty se vracejí do ruky.');
+        }
     </script>
 </body>
 </html>
