@@ -219,7 +219,58 @@
             // Základní placeholder pravidlo pro realtime zobrazení validity sady
             return allCards.length >= 3; 
         }
+function evaluateBankSets(cards) {
+    const isValid = new Array(cards.length).fill(false);
+    if (cards.length < 3) return isValid;
 
+    let i = 0;
+    while (i < cards.length) {
+        let matchedLen = 0;
+
+        // Procházíme od nejdelších možných úseků k nejkratším (min. 3 karty)
+        for (let len = cards.length - i; len >= 3; len--) {
+            const sub = cards.slice(i, i + len);
+            if (isValidSetSequence(sub)) {
+                matchedLen = len;
+                break;
+            }
+        }
+
+        if (matchedLen > 0) {
+            for (let k = 0; k < matchedLen; k++) {
+                isValid[i + k] = true;
+            }
+            i += matchedLen; // Posuneme se za nalezenou sadu
+        } else {
+            i++;
+        }
+    }
+    return isValid;
+}
+
+function isValidSetSequence(sub) {
+    // 1. Lichočár nepatří do žádné sady nikdy
+    if (sub.some(card => card.type === 'lichocar')) {
+        return false;
+    }
+
+    const colors = sub.map(c => c.suit);
+    const values = sub.map(c => c.val);
+
+    // 2. Jednobarevná sada (stejná barva bez ohledu na čísla)
+    const isSameColor = colors.every(c => c === colors[0]);
+
+    // 3. Jednočíselná sada (stejná čísla bez ohledu na barvu)
+    const isSameValue = values.every(v => v === values[0]);
+
+    // 4. Vzestupná postupka
+    const isAscending = values.every((val, idx) => idx === 0 || val === values[idx - 1] + 1);
+
+    // 5. Sestupná postupka
+    const isDescending = values.every((val, idx) => idx === 0 || val === values[idx - 1] - 1);
+
+    return isSameColor || isSameValue || isAscending || isDescending;
+}
         function endTurn() {
             alert('Tah byl ukončen a neplatné karty se vracejí do ruky.');
         }
