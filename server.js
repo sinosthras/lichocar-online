@@ -4,26 +4,22 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*" }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.static('public'));
 
-// Paměť pro herní místnosti
 const rooms = {};
-
 const SUITS = ['red', 'blue', 'green', 'yellow'];
 
 function createDeck() {
     let deck = [];
     SUITS.forEach(suit => {
         for (let val = 1; val <= 13; val++) {
-            deck.push({ type: 'normal', suit: suit, val: val });
+            deck.push({ id: `${suit}-${val}`, type: 'normal', suit: suit, val: val });
         }
     });
     for (let i = 0; i < 4; i++) {
-        deck.push({ type: 'lichocar', suit: 'lichocar', val: 0 });
+        deck.push({ id: `lichocar-${i}`, type: 'lichocar', suit: 'lichocar', val: 0 });
     }
     for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -33,107 +29,101 @@ function createDeck() {
 }
 
 io.on('connection', (socket) => {
-    console.log('Hráč připojen:', socket.id);
-
-    socket.on('joinRoom', ({ roomId, playerName }) => {
+    socket.on('setupGame', ({ roomId, playerName, totalPlayers, playerTypes }) => {
         socket.join(roomId);
         
         if (!rooms[roomId]) {
             rooms[roomId] = {
                 id: roomId,
                 players: [],
-                gameState: null
+                gameState: null,
+                settings: { totalPlayers, playerTypes }
             };
         }
 
         const room = rooms[roomId];
         
-        if (room.players.length < 4 && !room.gameState) {
-            const player = {
-                id: socket.id,
-                name: playerName || `Hráč ${room.players.length + 1}`,
+        // Přidáme hostujícího člověka
+        const humanPlayer = {
+            id: socket.id,
+            name: playerName || 'Hráč',
+            isBot: false,
+            hand: [],
+            sets: []
+        };
+        room.players.push(humanPlayer);
+
+        // Doplníme boty podle nastavení
+        while (room.players.length < totalPlayers) {
+            const botIdx = room.players.length;
+            room.players.push({
+                id: `bot-${roomId}-${botIdx}`,
+                name: `Bot ${botIdx + 1}`,
+                isBot: true,
                 hand: [],
                 sets: []
-            };
-            room.players.push(player);
-            
-            io.to(roomId).emit('roomUpdated', {
-                players: room.players.map(p => ({ id: p.id, name: p.name })),
-                canStart: room.players.length >= 2
             });
-        } else {
-            socket.emit('errorMsg', 'Místnost je plná nebo hra již probíhá.');
         }
+
+        startNewGame(roomId);
     });
 
-    socket.on('startGame', (roomId) => {
+    socket.on('playerAction', ({ roomId, actionData }) => {
         const room = rooms[roomId];
-        if (!room || room.players.length < 2) return;
-
-        const deck = createDeck();
-        room.players.forEach((p, idx) => {
-            p.hand = [];
-            p.sets = [];
-        });
-
-        for (let i = 0; i < deck.length; i++) {
-            room.players[i % room.players.length].hand.push(deck[i]);
-        }
-
-        room.gameState = {
-            activePlayerIdx: 0,
-            offererIdx: null,
-            phase: 'CHOOSE_CARD_AND_OFFERER',
-            bank: [],
-            targetSuit: null,
-            lastOfferValue: 0
-        };
-
-        sendGameState(roomId);
+        if (!room || !room.gameState) return;
+        
+        // Zde budeme zpracovávat tahy (vyložení karty, dokládání do nabídky, konec tahu)
+        // Prozatím pošleme aktualizovaný stav zpět
+        broadcastState(roomId);
     });
 
     socket.on('disconnect', () => {
-        console.log('Hráč odpojen:', socket.id);
-        // Vyčištění prázdných místností
         for (const roomId in rooms) {
             rooms[roomId].players = rooms[roomId].players.filter(p => p.id !== socket.id);
-            if (rooms[roomId].players.length === 0) {
-                delete rooms[roomId];
-            } else {
-                io.to(roomId).emit('roomUpdated', {
-                    players: rooms[roomId].players.map(p => ({ id: p.id, name: p.name })),
-                    canStart: false
-                });
-            }
+            if (rooms[roomId].players.length === 0) delete rooms[roomId];
         }
     });
 });
 
-function sendGameState(roomId) {
+function startNewGame(roomId) {
+    const room = rooms[roomId];
+    const deck = createDeck();
+    
+    room.players.forEach(p => {
+        p.hand = [];
+        p.sets = [];
+    });
+
+    // Rozdání karet
+    for (let i = 0; i < deck.length; i++) {
+        room.players[i % room.players.length].hand.push(deck[i]);
+    }
+
+    room.gameState = {
+        activePlayerIdx: 0,
+        phase: 'PLAY_CARD', // PLAY_CARD, EXTEND_OFFER
+        bank: [], // pole slotů s kartami v nabídce
+        selectedCard: null
+    };
+
+    broadcastState(roomId);
+}
+
+function broadcastState(roomId) {
     const room = rooms[roomId];
     if (!room) return;
 
-    room.players.forEach((player) => {
-        // Každému hráč posíláme jen jeho ruku a veřejné informace o ostatních
-        const clientState = {
-            players: room.players.map(p => ({
-                id: p.id,
-                name: p.name,
-                handCount: p.hand.length,
-                sets: p.sets
-            })),
+    room.players.forEach(player => {
+        if (player.isBot) return;
+        io.to(player.id).emit('gameState', {
+            players: room.players.map(p => ({ name: p.name, handCount: p.hand.length, isBot: p.isBot })),
             myHand: player.hand,
             activePlayerIdx: room.gameState.activePlayerIdx,
-            offererIdx: room.gameState.offererIdx,
             phase: room.gameState.phase,
-            bank: room.gameState.bank.map(b => b.faceUp ? b : { faceUp: false }),
-            targetSuit: room.gameState.targetSuit
-        };
-        io.to(player.id).emit('gameState', clientState);
+            bank: room.gameState.bank
+        });
     });
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server běží na portu ${PORT}`);
-});
+server.listen(PORT);
