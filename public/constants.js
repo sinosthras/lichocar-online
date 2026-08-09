@@ -1,34 +1,39 @@
-export const SUITS = ['red', 'blue', 'green', 'yellow'];
-
-export const SUIT_ICONS = {
-    red: '♥',
-    blue: '♦',
-    green: '♣',
-    yellow: '♠'
-};
+export const SUITS = ['cervena', 'modra', 'zelena', 'zluta'];
+export const VALUES = [7, 8, 9, 10, 11, 12]; // Prskavky/Hodnoty karet
 
 export function createDeck() {
-    let deck = [];
-    SUITS.forEach(suit => {
-        for (let val = 1; val <= 13; val++) {
-            deck.push({ type: 'normal', suit, val });
+    const deck = [];
+    
+    // Generování běžných karet
+    for (const suit of SUITS) {
+        for (const val of VALUES) {
+            deck.push({
+                type: 'normal',
+                suit,
+                val
+            });
         }
-    });
+    }
+
+    // Přidání 4 Lichočárů
     for (let i = 0; i < 4; i++) {
-        deck.push({ type: 'lichocar', suit: 'lichocar', val: 0 });
+        deck.push({
+            type: 'lichocar',
+            suit: 'lichocar',
+            val: 0
+        });
     }
-    for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
-    return deck;
+
+    // Zamíchání
+    return deck.sort(() => Math.random() - 0.5);
 }
 
 export function sortHand(hand) {
+    const suitOrder = { cervena: 1, modra: 2, zelena: 3, zluta: 4, lichocar: 5 };
     hand.sort((a, b) => {
-        if (a.type === 'lichocar') return 1;
-        if (b.type === 'lichocar') return -1;
-        if (a.suit !== b.suit) return a.suit.localeCompare(b.suit);
+        if (suitOrder[a.suit] !== suitOrder[b.suit]) {
+            return suitOrder[a.suit] - suitOrder[b.suit];
+        }
         return a.val - b.val;
     });
 }
