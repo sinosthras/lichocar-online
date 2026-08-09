@@ -1,31 +1,21 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+import { createDeck, sortHand } from './public/constants.js';
+import { formSetsFromCards, checkGameOver, calculateScores } from './public/gameLogic.js';
+import { botPlayStartTurn, botDecision, botLayCards } from './public/aiPlayer.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-// ES Importy pro server logiku
-let createDeck, sortHand, formSetsFromCards, checkGameOver, calculateScores, botPlayStartTurn, botDecision, botLayCards;
-
-async function loadModules() {
-    const constants = await import('./public/constants.js');
-    const logic = await import('./public/gameLogic.js');
-    const ai = await import('./public/aiPlayer.js');
-
-    createDeck = constants.createDeck;
-    sortHand = constants.sortHand;
-    formSetsFromCards = logic.formSetsFromCards;
-    checkGameOver = logic.checkGameOver;
-    calculateScores = logic.calculateScores;
-    botPlayStartTurn = ai.botPlayStartTurn;
-    botDecision = ai.botDecision;
-    botLayCards = ai.botLayCards;
-}
 
 const rooms = {};
 
@@ -326,7 +316,7 @@ function startLayingPhase(room, player, cardsFromBank) {
 function finishLayingPhase(room) {
     const gs = room.gameState;
     const ctx = gs.layContext;
-    
+
     const { createdSets, unused } = formSetsFromCards(ctx.cardsFromBank);
 
     if (createdSets.length > 0) {
@@ -373,7 +363,7 @@ function prepareClientState(room, mySlotId) {
     if (gs && gs.phase === 'LAYING_CARDS') {
         const { createdSets } = formSetsFromCards(gs.layContext.cardsFromBank);
         let usedCards = createdSets.flatMap(s => s.cards);
-        validSetCardIndices = gs.layContext.cardsFromBank.map(c => 
+        validSetCardIndices = gs.layContext.cardsFromBank.map(c =>
             usedCards.some(uc => uc.suit === c.suit && uc.val === c.val && uc.type === c.type)
         );
     }
@@ -412,7 +402,5 @@ function prepareClientState(room, mySlotId) {
     };
 }
 
-loadModules().then(() => {
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
-});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server běží na portu ${PORT}`));
