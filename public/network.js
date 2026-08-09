@@ -1,32 +1,37 @@
-let socket = null;
+export function initNetwork(socket, callbacks) {
+    socket.on('gameStateUpdate', (state) => {
+        callbacks.onGameStateUpdate(state);
+    });
 
-export function initNetwork(onStateUpdate, onError) {
-    socket = io();
-
-    socket.on('errorMsg', onError);
-    socket.on('gameStateUpdate', onStateUpdate);
+    socket.on('errorMsg', (msg) => {
+        alert(msg);
+    });
 }
 
-export function joinRoom(roomCode, playerName, slotConfigs) {
+export function sendJoinRoom(socket, roomCode, playerName, slotConfigs) {
     socket.emit('joinRoom', { roomCode, playerName, slotConfigs });
 }
 
-export function selectCardAndOfferer(cardIndex, offererId) {
+export function sendSelectCardAndOfferer(socket, cardIndex, offererId) {
     socket.emit('selectCardAndOfferer', { cardIndex, offererId });
 }
 
-export function sendDecision(action) {
+export function sendOfferCard(socket, cardIndex) {
+    socket.emit('selectOfferCard', { cardIndex });
+}
+
+export function sendPlayerDecision(socket, action) {
     socket.emit('playerDecision', { action });
 }
 
-export function attachCard(handIndex, targetSlotIndex) {
+export function sendAttachCard(socket, handIndex, targetSlotIndex) {
     socket.emit('attachCard', { handIndex, targetSlotIndex });
 }
 
-export function reorderBank(fromIndex, toIndex) {
+export function sendReorderBank(socket, fromIndex, toIndex) {
     socket.emit('reorderBank', { fromIndex, toIndex });
 }
 
-export function finishLaying() {
+export function sendFinishLaying(socket) {
     socket.emit('finishLaying');
 }
