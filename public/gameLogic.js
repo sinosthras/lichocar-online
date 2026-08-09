@@ -1,84 +1,95 @@
-import { SUITS } from './constants.js';
+/**
+ * Kontrola a tvorba platných sad.
+ * Sady mohou být:
+ * 1. Stejná barva (≥ 3 karty)
+ * 2. Stejná hodnota/číslo (≥ 3 karty)
+ * 3. Postupka stejné barvy nebo namíchaná (≥ 3 karty s hodnotami plynule po sobě)
+ */
+export function formSetsFromCards(cards) {
+    let available = [...cards].filter(c => c.type === 'normal');
+    const createdSets = [];
 
-export function formSetsFromCards(cardPool) {
-    let unused = [...cardPool];
-    let createdSets = [];
-    let createdSet = true;
+    // Pomocná funkce pro vyhledání sad podle priority
+    let found = true;
+    while (found && available.length >= 3) {
+        found = false;
 
-    while (createdSet) {
-        createdSet = false;
-        
-        // 1. Barva (>=3)
-        for (let suit of SUITS) {
-            let match = unused.filter(c => c.suit === suit);
-            if (match.length >= 3) {
-                createdSets.push({ type: 'barva', cards: match });
-                unused = unused.filter(c => c.suit !== suit);
-                createdSet = true;
+        // A) Sady podle stejné hodnota (např. 3x Osmička)
+        const byVal = {};
+        available.forEach(c => {
+            byVal[c.val] = byVal[c.val] || [];
+            byVal[c.val].push(c);
+        });
+        for (const val in byVal) {
+            if (byVal[val].length >= 3) {
+                const setCards = byVal[val];
+                createdSets.push({ type: 'SAME_VALUE', cards: setCards });
+                available = available.filter(c => !setCards.includes(c));
+                found = true;
                 break;
             }
         }
-        if (createdSet) continue;
+        if (found) continue;
 
-        // 2. Číslo (>=3)
-        for (let v = 1; v <= 13; v++) {
-            let match = unused.filter(c => c.val === v);
-            if (match.length >= 3) {
-                createdSets.push({ type: 'cislo', cards: match });
-                unused = unused.filter(c => c.val !== v);
-                createdSet = true;
+        // B) Sady podle stejné barvy (např. 3x Červená)
+        const bySuit = {};
+        available.forEach(c => {
+            bySuit[c.suit] = bySuit[c.suit] || [];
+            bySuit[c.suit].push(c);
+        });
+        for (const suit in bySuit) {
+            if (bySuit[suit].length >= 3) {
+                const setCards = bySuit[suit];
+                createdSets.push({ type: 'SAME_SUIT', cards: setCards });
+                available = available.filter(c => !setCards.includes(c));
+                found = true;
                 break;
             }
         }
-        if (createdSet) continue;
+        if (found) continue;
 
-        // 3. Postupka (>=3)
-        let sorted = [...unused].filter(c => c.type === 'normal').sort((a, b) => a.val - b.val);
-        let run = [];
-        for (let i = 0; i < sorted.length; i++) {
-            if (run.length === 0) {
-                run.push(sorted[i]);
-            } else {
-                let last = run[run.length - 1];
-                if (sorted[i].val === last.val + 1) {
-                    run.push(sorted[i]);
-                } else if (sorted[i].val > last.val + 1) {
-                    if (run.length >= 3) break;
-                    run = [sorted[i]];
+        // C) Postupky (vzestupné / sestupné - seřazením hodnot)
+        // Seřadíme dostupné karty unikátně podle hodnoty
+        const sorted = [...available].sort((a, b) => a.val - b.val);
+        for (let i = 0; i <= sorted.length - 3; i++) {
+            let run = [sorted[i]];
+            for (let j = i + 1; j < sorted.length; j++) {
+                if (sorted[j].val === run[run.length - 1].val + 1) {
+                    run.push(sorted[j]);
+                } else if (sorted[j].val > run[run.length - 1].val + 1) {
+                    break;
                 }
             }
-        }
-        if (run.length >= 3) {
-            createdSets.push({ type: 'postupka', cards: run });
-            let idsToRemove = new Set(run.map(c => c.suit + '-' + c.val));
-            unused = unused.filter(c => !idsToRemove.has(c.suit + '-' + c.val));
-            createdSet = true;
+            if (run.length >= 3) {
+                createdSets.push({ type: 'RUN', cards: run });
+                available = available.filter(c => !run.includes(c));
+                found = true;
+                break;
+            }
         }
     }
 
-    return { createdSets, unused };
+    return {
+        createdSets,
+        unused: available.concat([...cards].filter(c => c.type === 'lichocar'))
+    };
 }
 
 export function checkGameOver(room) {
-    let activePlayers = room.players.filter(p => p.activeInGame);
-    let winner = activePlayers.find(p => p.hand.length === 0 || p.hand.every(c => c.type === 'lichocar'));
-    return winner || null;
+    const activePlayers = room.players.filter(p => p.activeInGame);
+    for (let player of activePlayers) {
+        if (player.hand.length === 0) {
+            return player;
+        }
+    }
+    return null;
 }
 
 export function calculateScores(room) {
-    let results = [];
-    room.players.filter(p => p.activeInGame).forEach(p => {
-        let score = 0;
-        p.sets.forEach(s => {
-            score += s.cards.length;
-            if (s.cards.length === 4) score += 1;
-            if (s.cards.length >= 5) score += 3;
-        });
-        p.hand.forEach(c => {
-            if (c.type === 'lichocar') score -= 5;
-            else score -= 1;
-        });
-        results.push({ name: p.name, score, setMatches: p.sets.length, handCount: p.hand.length });
+    return room.players.filter(p => p.activeInGame).map(p => {
+        const setMatches = p.sets.reduce((sum, s) => sum + s.cards.length, 0);
+        const handCount = p.hand.length;
+        const score = setMatches - handCount;
+        return { name: p.name, score, setMatches, handCount };
     });
-    return results;
 }
