@@ -1,43 +1,34 @@
-import { initNetwork, joinRoom, selectCardAndOfferer, sendDecision, attachCard, reorderBank, finishLaying } from './network.js';
-import { initUI, render } from './ui.js';
+import { initNetwork, sendJoinRoom } from './network.js';
+import { renderUI } from './ui.js';
 
-let localState = null;
+const socket = io();
 
-window.addEventListener('DOMContentLoaded', () => {
-    initUI({
-        onChooseOfferer: (cardIndex, offererId) => selectCardAndOfferer(cardIndex, offererId),
-        onDecision: (action) => sendDecision(action),
-        onAttachCard: (handIndex, targetSlotIndex) => attachCard(handIndex, targetSlotIndex),
-        onReorderBank: (fromIndex, toIndex) => reorderBank(fromIndex, toIndex),
-        onFinishLaying: () => finishLaying()
+let currentState = null;
+
+initNetwork(socket, {
+    onGameStateUpdate: (state) => {
+        currentState = state;
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('game-view').style.display = 'block';
+        renderUI(currentState, socket);
+    }
+});
+
+document.getElementById('btn-join').addEventListener('click', () => {
+    const roomCode = document.getElementById('room-code').value.trim() || 'LOBBY1';
+    const playerName = document.getElementById('player-name').value.trim() || 'Hráč';
+
+    // Sesbírání konfigurace pro všech 4 sloty
+    const slotConfigs = [];
+    const rows = document.querySelectorAll('#slot-configs .slot-row');
+    
+    rows.forEach(row => {
+        const type = row.querySelector('.slot-type').value;
+        slotConfigs.push({
+            isBot: type === 'bot',
+            active: type !== 'inactive'
+        });
     });
 
-    initNetwork(
-        (data) => {
-            localState = data;
-            document.getElementById('lobby-container').classList.add('hidden');
-            document.getElementById('game-board').classList.remove('hidden');
-            document.getElementById('log-box').classList.remove('hidden');
-            render(localState);
-        },
-        (msg) => alert(msg)
-    );
-
-    window.joinGame = function() {
-        const roomCode = document.getElementById('room-code').value.trim();
-        const playerName = document.getElementById('player-name').value.trim();
-        const count = parseInt(document.getElementById('total-players').value);
-
-        const slotConfigs = [];
-        for (let i = 0; i < 4; i++) {
-            if (i < count) {
-                const isBot = document.getElementById(`p-type-${i}`).value === 'bot';
-                slotConfigs.push({ isBot, active: true });
-            } else {
-                slotConfigs.push({ isBot: true, active: false });
-            }
-        }
-
-        joinRoom(roomCode, playerName, slotConfigs);
-    };
+    sendJoinRoom(socket, roomCode, playerName, slotConfigs);
 });
