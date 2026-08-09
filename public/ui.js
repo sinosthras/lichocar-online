@@ -1,7 +1,6 @@
 import { sendSelectCardAndOfferer, sendOfferCard, sendPlayerDecision, sendAttachCard, sendReorderBank, sendFinishLaying } from './network.js';
 
 let selectedCardIndex = null;
-let draggedHandIndex = null;
 
 const SUIT_ICONS = {
     cervena: '♥',
@@ -85,20 +84,22 @@ function renderBank(state, socket) {
     if (!state.gameState || !state.gameState.bank) return;
 
     const gs = state.gameState;
+    // Zjišťujeme, zda je aktuální hráč ten, který právě dokládá sady z nabídky
     const isLayingPhase = gs.phase === 'LAYING_CARDS' && gs.layContext && gs.layContext.playerId === state.mySlotId;
 
     gs.bank.forEach((b, idx) => {
         const cardDiv = document.createElement('div');
         
-        // Karta je viditelná pokud je faceUp, NEBO pokud ji položil tento konkrétní hráč (vnímá ji jen on)
+        // KLÍČOVÁ ZMĚNA: Ve fázi dokládání (LAYING_CARDS) JSOU VŠECHNY KARTY V BANKU LÍCEM NAHORU
+        // Mimo tuto fázi vidí hráč buď odkryté karty (faceUp), nebo své vlastní tajně položené karty.
         const isMyOfferCard = b.offeredBy === state.mySlotId;
-        const isVisibleToMe = b.faceUp || isMyOfferCard || isLayingPhase;
+        const shouldShowFaceUp = isLayingPhase || b.faceUp || isMyOfferCard;
 
-        if (isVisibleToMe && b.card) {
+        if (shouldShowFaceUp && b.card) {
             cardDiv.className = `card ${b.card.suit}`;
             
-            // Pokud ji vidím jen já jakožto nabízející, dáme jí jemné označení tajné karty
-            if (!b.faceUp && isMyOfferCard) {
+            // Pokud jde o tajnou nabídku (před získáním), zobrazíme jemnou indikaci
+            if (!b.faceUp && isMyOfferCard && !isLayingPhase) {
                 cardDiv.style.opacity = '0.85';
             }
 
@@ -113,23 +114,24 @@ function renderBank(state, socket) {
                 `;
             }
 
-            if (!b.faceUp && isMyOfferCard) {
+            if (!b.faceUp && isMyOfferCard && !isLayingPhase) {
                 cardDiv.innerHTML += `<small style="position:absolute; bottom:2px; font-size:10px; opacity:0.6;">🔒 Moje</small>`;
             }
         } else {
-            // Pro ostatní zůstává zakrytá
+            // Rub karty pro ostatní hráče během fáze nabídky
             cardDiv.className = 'card facedown';
             cardDiv.innerHTML = '<span class="card-val" style="color:#8d99ae;">🂠</span>';
         }
 
-        // DRAG & DROP POŘADÍ V BANKU A PŘIKLÁDÁNÍ
+        // DRAG & DROP SPOJENÝ S BANKEM V FÁZI DOKLÁDÁNÍ
         if (isLayingPhase) {
             cardDiv.draggable = true;
-            
+
+            // Počátek přetahování karty z banku (pro změnu pořadí)
             cardDiv.addEventListener('dragstart', (e) => {
                 e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'bank', index: idx }));
             });
-            
+
             cardDiv.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 cardDiv.style.border = '2px dashed #ffb703';
@@ -142,14 +144,19 @@ function renderBank(state, socket) {
             cardDiv.addEventListener('drop', (e) => {
                 e.preventDefault();
                 cardDiv.style.border = '';
-                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                const rawData = e.dataTransfer.getData('text/plain');
+                if (!rawData) return;
                 
+                const data = JSON.parse(rawData);
+
                 if (data.type === 'hand') {
-                    // Vložení karty z ruky na tuto pozici v banku
+                    // Přiložení karty z ruky na konkrétní pozici
                     sendAttachCard(socket, data.index, idx);
                 } else if (data.type === 'bank') {
-                    // Přeřazení pořadí karet v rámci banku
-                    sendReorderBank(socket, data.index, idx);
+                    // Změna pořadí karty v rámci banku (dragged index -> target index)
+                    if (data.index !== idx) {
+                        sendReorderBank(socket, data.index, idx);
+                    }
                 }
             });
         }
@@ -157,17 +164,29 @@ function renderBank(state, socket) {
         container.appendChild(cardDiv);
     });
 
-    // Drop-zóna na konci banku pro přiložení na konec řady
+    // Drop-zóna na konci banku pro snadné přiložení na úplný konec řady
     if (isLayingPhase) {
         const dropZone = document.createElement('div');
         dropZone.className = 'card-slot drop-target';
         dropZone.innerText = '+ Na konec';
-        dropZone.addEventListener('dragover', (e) => e.preventDefault());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.border = '2px dashed #ffb703';
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.border = '';
+        });
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            dropZone.style.border = '';
+            const rawData = e.dataTransfer.getData('text/plain');
+            if (!rawData) return;
+
+            const data = JSON.parse(rawData);
             if (data.type === 'hand') {
                 sendAttachCard(socket, data.index, gs.bank.length);
+            } else if (data.type === 'bank') {
+                sendReorderBank(socket, data.index, gs.bank.length - 1);
             }
         });
         container.appendChild(dropZone);
@@ -237,7 +256,7 @@ function renderControls(state, socket) {
         btnsDiv.appendChild(bRej);
         controls.appendChild(btnsDiv);
     } else if (gs.phase === 'LAYING_CARDS' && gs.layContext && gs.layContext.playerId === state.mySlotId) {
-        controls.innerHTML = '<div>Přetahujte karty z ruky do banku nebo měňte jejich pořadí.</div>';
+        controls.innerHTML = '<div>Přetahujte karty z ruky do banku nebo měňte jejich pořadí v banku.</div>';
         const bFinish = document.createElement('button');
         bFinish.innerText = 'Dokončit vykládání';
         bFinish.onclick = () => sendFinishLaying(socket);
@@ -303,7 +322,6 @@ function renderHand(state, socket) {
 
         cardDiv.draggable = !isDisabled;
         cardDiv.addEventListener('dragstart', (e) => {
-            draggedHandIndex = idx;
             e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'hand', index: idx }));
         });
 
