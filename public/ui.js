@@ -3,7 +3,6 @@ import { sendSelectCardAndOfferer, sendOfferCard, sendPlayerDecision, sendAttach
 let selectedCardIndex = null;
 let draggedHandIndex = null;
 
-// POKEROVÉ SYMBOLY DLE POŽADOVANÝCH BAREV
 const SUIT_ICONS = {
     cervena: '♥',
     modra: '♠',
@@ -91,8 +90,18 @@ function renderBank(state, socket) {
     gs.bank.forEach((b, idx) => {
         const cardDiv = document.createElement('div');
         
-        if (b.faceUp && b.card) {
+        // Karta je viditelná pokud je faceUp, NEBO pokud ji položil tento konkrétní hráč (vnímá ji jen on)
+        const isMyOfferCard = b.offeredBy === state.mySlotId;
+        const isVisibleToMe = b.faceUp || isMyOfferCard || isLayingPhase;
+
+        if (isVisibleToMe && b.card) {
             cardDiv.className = `card ${b.card.suit}`;
+            
+            // Pokud ji vidím jen já jakožto nabízející, dáme jí jemné označení tajné karty
+            if (!b.faceUp && isMyOfferCard) {
+                cardDiv.style.opacity = '0.85';
+            }
+
             if (b.card.type === 'lichocar') {
                 cardDiv.innerHTML = `<span class="demon-emoji">😈</span>`;
             } else {
@@ -103,23 +112,43 @@ function renderBank(state, socket) {
                     <span class="card-suit-icon">${icon}</span>
                 `;
             }
+
+            if (!b.faceUp && isMyOfferCard) {
+                cardDiv.innerHTML += `<small style="position:absolute; bottom:2px; font-size:10px; opacity:0.6;">🔒 Moje</small>`;
+            }
         } else {
+            // Pro ostatní zůstává zakrytá
             cardDiv.className = 'card facedown';
             cardDiv.innerHTML = '<span class="card-val" style="color:#8d99ae;">🂠</span>';
         }
 
+        // DRAG & DROP POŘADÍ V BANKU A PŘIKLÁDÁNÍ
         if (isLayingPhase) {
             cardDiv.draggable = true;
+            
             cardDiv.addEventListener('dragstart', (e) => {
                 e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'bank', index: idx }));
             });
-            cardDiv.addEventListener('dragover', (e) => e.preventDefault());
+            
+            cardDiv.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                cardDiv.style.border = '2px dashed #ffb703';
+            });
+
+            cardDiv.addEventListener('dragleave', () => {
+                cardDiv.style.border = '';
+            });
+
             cardDiv.addEventListener('drop', (e) => {
                 e.preventDefault();
+                cardDiv.style.border = '';
                 const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                
                 if (data.type === 'hand') {
+                    // Vložení karty z ruky na tuto pozici v banku
                     sendAttachCard(socket, data.index, idx);
                 } else if (data.type === 'bank') {
+                    // Přeřazení pořadí karet v rámci banku
                     sendReorderBank(socket, data.index, idx);
                 }
             });
@@ -128,10 +157,11 @@ function renderBank(state, socket) {
         container.appendChild(cardDiv);
     });
 
+    // Drop-zóna na konci banku pro přiložení na konec řady
     if (isLayingPhase) {
         const dropZone = document.createElement('div');
         dropZone.className = 'card-slot drop-target';
-        dropZone.innerText = '+ Přiložit';
+        dropZone.innerText = '+ Na konec';
         dropZone.addEventListener('dragover', (e) => e.preventDefault());
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
@@ -207,7 +237,7 @@ function renderControls(state, socket) {
         btnsDiv.appendChild(bRej);
         controls.appendChild(btnsDiv);
     } else if (gs.phase === 'LAYING_CARDS' && gs.layContext && gs.layContext.playerId === state.mySlotId) {
-        controls.innerHTML = '<div>Přetahujte karty z ruky do banku pro tvorbu sad.</div>';
+        controls.innerHTML = '<div>Přetahujte karty z ruky do banku nebo měňte jejich pořadí.</div>';
         const bFinish = document.createElement('button');
         bFinish.innerText = 'Dokončit vykládání';
         bFinish.onclick = () => sendFinishLaying(socket);
