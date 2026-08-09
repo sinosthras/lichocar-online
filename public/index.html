@@ -244,6 +244,56 @@
             flex-wrap: wrap;
             margin-top: 10px;
         }
+   /* Vysvícení hratelných karet */
+.card.playable {
+    border: 2px solid #ffb703;
+    box-shadow: 0 0 10px #ffb703, inset 0 0 5px rgba(255, 183, 3, 0.5);
+    animation: pulse-glow 1.5s infinite alternate;
+}
+
+@keyframes pulse-glow {
+    from { box-shadow: 0 0 6px #ffb703; }
+    to { box-shadow: 0 0 14px #ffb703, 0 0 4px #fff; }
+}
+
+/* Styl karet a ikonek */
+.card-suit-icon {
+    font-size: 1.2em;
+    margin-bottom: 2px;
+}
+.card-val {
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+/* Tooltipy sad */
+.set-badge {
+    position: relative;
+    display: inline-block;
+    margin-right: 6px;
+    cursor: pointer;
+    text-decoration: underline;
+    color: #ffb703;
+}
+
+.set-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 125%;
+    left: 0;
+    background: #111;
+    padding: 6px;
+    border-radius: 6px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    border: 1px solid #4a4e69;
+}
+
+.drop-target {
+    color: #ffb703;
+    font-size: 0.8em;
+    cursor: pointer;
+}
     </style>
 </head>
 <body>
