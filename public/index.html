@@ -11,6 +11,13 @@
             --accent-color: #d90429;
             --text-color: #edf2f4;
             --panel-bg: #2b2b36;
+
+            /* NOVÉ BARVY KARET */
+            --card-red: #e63946;
+            --card-blue: #0077b6;
+            --card-green: #2a9d8f;
+            --card-yellow: #e9c46a;
+            --card-purple: #7b2cbf;
         }
 
         body {
@@ -30,7 +37,7 @@
             text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
-        /* LOBBY STYLY */
+        /* LOBBY */
         #lobby {
             background: var(--panel-bg);
             padding: 25px;
@@ -82,28 +89,12 @@
             transition: background 0.2s, transform 0.1s;
         }
 
-        button:hover {
-            background: #ef233c;
-            transform: translateY(-1px);
-        }
-
-        button:active {
-            transform: translateY(1px);
-        }
-
-        #btn-join {
-            width: 100%;
-            padding: 12px;
-            font-size: 1.1em;
-            margin-top: 10px;
-        }
+        button:hover { background: #ef233c; transform: translateY(-1px); }
+        button:active { transform: translateY(1px); }
+        #btn-join { width: 100%; padding: 12px; font-size: 1.1em; margin-top: 10px; }
 
         /* HERNÍ PLOCHA */
-        #game-view {
-            width: 100%;
-            max-width: 1000px;
-        }
-
+        #game-view { width: 100%; max-width: 1000px; }
         #players-overview {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -124,70 +115,96 @@
             background: #343444;
         }
 
-        /* KARTY A BANK */
+        /* GRAFICKÉ KARTY */
         .card-container {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            min-height: 90px;
+            gap: 12px;
+            min-height: 105px;
             align-items: center;
         }
 
         .card {
-            width: 60px;
-            height: 90px;
-            border-radius: 6px;
-            background: #fff;
-            color: #000;
+            width: 65px;
+            height: 98px;
+            border-radius: 8px;
+            background: #ffffff;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
+            padding: 6px 4px;
+            box-sizing: border-box;
             font-weight: bold;
-            font-size: 1.1em;
             cursor: pointer;
             user-select: none;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            transition: transform 0.15s, border 0.15s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            transition: transform 0.15s, border-color 0.15s;
             position: relative;
-            border: 2px solid #ccc;
+            border: 2px solid #ddd;
         }
 
-        .card:hover:not(.disabled) {
-            transform: translateY(-5px);
-        }
+        .card:hover:not(.disabled) { transform: translateY(-6px); }
 
         .card.selected {
-            border: 3px solid #ffb703;
+            border: 3px solid #ffb703 !important;
             transform: translateY(-8px);
-            box-shadow: 0 6px 12px rgba(255, 183, 3, 0.4);
+            box-shadow: 0 6px 14px rgba(255, 183, 3, 0.6);
         }
 
         .card.disabled {
-            opacity: 0.35;
+            opacity: 0.3;
             cursor: not-allowed;
             filter: grayscale(80%);
         }
 
-        /* BAREVNÉ SCHÉMA KARET */
-        .card.cervena { color: #d90429; border-color: #d90429; }
-        .card.zelena { color: #38b000; border-color: #38b000; }
-        .card.zalud { color: #854d0e; border-color: #854d0e; }
-        .card.kula { color: #ea580c; border-color: #ea580c; }
-        .card.lichocar { color: #7b2cbf; border-color: #7b2cbf; background: #f3e8ff; font-size: 0.8em; text-align: center; }
+        /* VYSVÍCENÍ HRATELNÝCH KARET */
+        .card.playable {
+            border: 3px solid #ffb703 !important;
+            animation: pulse-glow 1.4s infinite alternate;
+        }
+
+        @keyframes pulse-glow {
+            from { box-shadow: 0 0 6px #ffb703; }
+            to { box-shadow: 0 0 16px #ffb703, 0 0 6px #fff; }
+        }
+
+        /* BAREVNÉ VYMEZENÍ POKEROVÝCH BAREV */
+        .card.cervena { color: var(--card-red); border-color: var(--card-red); }
+        .card.modra { color: var(--card-blue); border-color: var(--card-blue); }
+        .card.zelena { color: var(--card-green); border-color: var(--card-green); }
+        .card.zluta { color: #d4a373; border-color: var(--card-yellow); }
+
+        /* LIKOČÁR - CELOFIALOVÝ S DÉMONEM */
+        .card.lichocar {
+            background: var(--card-purple);
+            border-color: #9d4edd;
+            color: #fff;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .card.lichocar .demon-emoji {
+            font-size: 2.2em;
+            line-height: 1;
+        }
 
         .card.facedown {
             background: linear-gradient(135deg, #2b2d42 25%, #1d1e2c 25%, #1d1e2c 50%, #2b2d42 50%, #2b2d42 75%, #1d1e2c 75%);
             background-size: 20px 20px;
             border: 2px solid #8d99ae;
-            color: transparent;
+            justify-content: center;
+            align-items: center;
         }
 
+        .card-suit-icon { font-size: 1.4em; line-height: 1; }
+        .card-val { font-size: 1.1em; line-height: 1; }
+
         .card-slot {
-            width: 60px;
-            height: 90px;
+            width: 65px;
+            height: 98px;
             border: 2px dashed #4a4e69;
-            border-radius: 6px;
+            border-radius: 8px;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -196,9 +213,9 @@
         /* MINIATURY PRO TOOLTIP SAD */
         .card-mini {
             display: inline-flex;
-            width: 22px;
-            height: 30px;
-            border-radius: 3px;
+            width: 24px;
+            height: 32px;
+            border-radius: 4px;
             background: #fff;
             font-weight: bold;
             font-size: 0.85em;
@@ -207,11 +224,35 @@
             margin: 0 2px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
-        .card-mini.cervena { color: #d90429; }
-        .card-mini.zelena { color: #38b000; }
-        .card-mini.zalud { color: #854d0e; }
-        .card-mini.kula { color: #ea580c; }
-        .card-mini.lichocar { color: #7b2cbf; background: #f3e8ff; }
+        .card-mini.cervena { color: var(--card-red); }
+        .card-mini.modra { color: var(--card-blue); }
+        .card-mini.zelena { color: var(--card-green); }
+        .card-mini.zluta { color: #d4a373; }
+        .card-mini.lichocar { background: var(--card-purple); color: #fff; font-size: 1em; }
+
+        /* TOOLTIP SAD */
+        .set-badge {
+            position: relative;
+            display: inline-block;
+            margin-right: 6px;
+            cursor: pointer;
+            text-decoration: underline;
+            color: #ffb703;
+        }
+
+        .set-tooltip {
+            display: none;
+            position: absolute;
+            bottom: 125%;
+            left: 0;
+            background: #111;
+            padding: 6px;
+            border-radius: 6px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            border: 1px solid #4a4e69;
+            white-space: nowrap;
+        }
 
         /* OVLÁDÁNÍ A PROTOKOL */
         #game-board {
@@ -244,56 +285,12 @@
             flex-wrap: wrap;
             margin-top: 10px;
         }
-   /* Vysvícení hratelných karet */
-.card.playable {
-    border: 2px solid #ffb703;
-    box-shadow: 0 0 10px #ffb703, inset 0 0 5px rgba(255, 183, 3, 0.5);
-    animation: pulse-glow 1.5s infinite alternate;
-}
 
-@keyframes pulse-glow {
-    from { box-shadow: 0 0 6px #ffb703; }
-    to { box-shadow: 0 0 14px #ffb703, 0 0 4px #fff; }
-}
-
-/* Styl karet a ikonek */
-.card-suit-icon {
-    font-size: 1.2em;
-    margin-bottom: 2px;
-}
-.card-val {
-    font-size: 1.1em;
-    font-weight: bold;
-}
-
-/* Tooltipy sad */
-.set-badge {
-    position: relative;
-    display: inline-block;
-    margin-right: 6px;
-    cursor: pointer;
-    text-decoration: underline;
-    color: #ffb703;
-}
-
-.set-tooltip {
-    display: none;
-    position: absolute;
-    bottom: 125%;
-    left: 0;
-    background: #111;
-    padding: 6px;
-    border-radius: 6px;
-    z-index: 100;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-    border: 1px solid #4a4e69;
-}
-
-.drop-target {
-    color: #ffb703;
-    font-size: 0.8em;
-    cursor: pointer;
-}
+        .drop-target {
+            color: #ffb703;
+            font-size: 0.8em;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
