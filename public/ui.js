@@ -3,12 +3,13 @@ import { sendSelectCardAndOfferer, sendOfferCard, sendPlayerDecision, sendAttach
 let selectedCardIndex = null;
 let draggedHandIndex = null;
 
+// POKEROVÉ SYMBOLY DLE POŽADOVANÝCH BAREV
 const SUIT_ICONS = {
-    cervena: '♥️',
-    zelena: '🟢',
-    zalud: '🌰',
-    kula: '🔔',
-    lichocar: '⚡'
+    cervena: '♥',
+    modra: '♠',
+    zelena: '♣',
+    zluta: '♦',
+    lichocar: '😈'
 };
 
 export function renderUI(state, socket) {
@@ -47,7 +48,7 @@ function renderPlayers(state) {
             p.sets.forEach((set, sIdx) => {
                 const cardPreviews = set.cards.map(c => {
                     const icon = SUIT_ICONS[c.suit] || '';
-                    const val = c.type === 'lichocar' ? '⚡' : c.val;
+                    const val = c.type === 'lichocar' ? '😈' : c.val;
                     return `<span class="card-mini ${c.suit}">${icon}${val}</span>`;
                 }).join('');
 
@@ -92,15 +93,21 @@ function renderBank(state, socket) {
         
         if (b.faceUp && b.card) {
             cardDiv.className = `card ${b.card.suit}`;
-            const icon = SUIT_ICONS[b.card.suit] || '';
-            const val = b.card.type === 'lichocar' ? 'LICHOČÁR' : b.card.val;
-            cardDiv.innerHTML = `<span class="card-suit-icon">${icon}</span><span class="card-val">${val}</span>`;
+            if (b.card.type === 'lichocar') {
+                cardDiv.innerHTML = `<span class="demon-emoji">😈</span>`;
+            } else {
+                const icon = SUIT_ICONS[b.card.suit] || '';
+                cardDiv.innerHTML = `
+                    <span class="card-suit-icon">${icon}</span>
+                    <span class="card-val">${b.card.val}</span>
+                    <span class="card-suit-icon">${icon}</span>
+                `;
+            }
         } else {
             cardDiv.className = 'card facedown';
-            cardDiv.innerHTML = '<span class="card-val">🂠</span>';
+            cardDiv.innerHTML = '<span class="card-val" style="color:#8d99ae;">🂠</span>';
         }
 
-        // Drag & Drop cílové zóny pro dokládání/přeřazování karet v banku
         if (isLayingPhase) {
             cardDiv.draggable = true;
             cardDiv.addEventListener('dragstart', (e) => {
@@ -121,7 +128,6 @@ function renderBank(state, socket) {
         container.appendChild(cardDiv);
     });
 
-    // Drop zóna na konci banku pro přiložení karty nakonec
     if (isLayingPhase) {
         const dropZone = document.createElement('div');
         dropZone.className = 'card-slot drop-target';
@@ -223,30 +229,32 @@ function renderHand(state, socket) {
         const cardDiv = document.createElement('div');
         cardDiv.className = `card ${card.suit}`;
         
-        const icon = SUIT_ICONS[card.suit] || '';
-        const val = card.type === 'lichocar' ? 'LICHOČÁR' : card.val;
-        cardDiv.innerHTML = `<span class="card-suit-icon">${icon}</span><span class="card-val">${val}</span>`;
+        if (card.type === 'lichocar') {
+            cardDiv.innerHTML = `<span class="demon-emoji">😈</span>`;
+        } else {
+            const icon = SUIT_ICONS[card.suit] || '';
+            cardDiv.innerHTML = `
+                <span class="card-suit-icon">${icon}</span>
+                <span class="card-val">${card.val}</span>
+                <span class="card-suit-icon">${icon}</span>
+            `;
+        }
 
         let isPlayable = false;
         let isDisabled = false;
 
         if (gs) {
-            // 1. ZAHÁJENÍ NABÍDKY: Všechny normální karty lze vyložit, Lichočár NE
             if (gs.phase === 'CHOOSE_CARD_AND_OFFERER' && gs.activePlayer === state.mySlotId) {
                 if (card.type === 'lichocar') {
                     isDisabled = true;
                 } else {
                     isPlayable = true;
                 }
-            }
-            // 2. REAKCE NABÍZEJÍCÍHO: Svítí karty stejné barvy s vyšší hodnotou + Lichočáry
-            else if (gs.phase === 'OFFERER_CHOICE' && gs.offererPlayer === state.mySlotId) {
+            } else if (gs.phase === 'OFFERER_CHOICE' && gs.offererPlayer === state.mySlotId) {
                 if (card.type === 'lichocar' || (card.type === 'normal' && card.suit === gs.targetSuit && card.val > gs.lastOfferValue)) {
                     isPlayable = true;
                 }
-            }
-            // 3. DOKLÁDÁNÍ DO BANKU: Svítí normální karty
-            else if (gs.phase === 'LAYING_CARDS' && gs.layContext && gs.layContext.playerId === state.mySlotId) {
+            } else if (gs.phase === 'LAYING_CARDS' && gs.layContext && gs.layContext.playerId === state.mySlotId) {
                 if (card.type === 'normal') {
                     isPlayable = true;
                 }
@@ -263,7 +271,6 @@ function renderHand(state, socket) {
             cardDiv.classList.add('selected');
         }
 
-        // Drag & Drop z ruky
         cardDiv.draggable = !isDisabled;
         cardDiv.addEventListener('dragstart', (e) => {
             draggedHandIndex = idx;
