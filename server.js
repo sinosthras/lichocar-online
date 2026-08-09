@@ -77,6 +77,7 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 1. ZAHÁJENÍ NABÍDKY: Karta Lichočár NESMÍ být vyložena jako první!
     socket.on('selectCardAndOfferer', ({ cardIndex, offererId }) => {
         const room = rooms[socket.roomCode];
         if (!room || !room.started) return;
@@ -84,8 +85,14 @@ io.on('connection', (socket) => {
         if (gs.activePlayer !== socket.slotId || gs.phase !== 'CHOOSE_CARD_AND_OFFERER') return;
 
         const player = room.players[socket.slotId];
-        const card = player.hand.splice(cardIndex, 1)[0];
+        const card = player.hand[cardIndex];
 
+        if (card.type === 'lichocar') {
+            socket.emit('errorMsg', 'Lichočár nesmí být použit jako první karta nabídky!');
+            return;
+        }
+
+        player.hand.splice(cardIndex, 1);
         gs.bank = [{ card, faceUp: true }];
         gs.targetSuit = card.suit;
         gs.lastOfferValue = card.val;
@@ -96,6 +103,32 @@ io.on('connection', (socket) => {
         broadcastState(room);
 
         setTimeout(() => processOffer(room), 800);
+    });
+
+    // 2. RUČNÍ NABÍDKA NABÍZEJÍCÍHO HRÁČE
+    socket.on('selectOfferCard', ({ cardIndex }) => {
+        const room = rooms[socket.roomCode];
+        if (!room || !room.started) return;
+        const gs = room.gameState;
+        if (gs.offererPlayer !== socket.slotId || gs.phase !== 'OFFERER_CHOICE') return;
+
+        const offerer = room.players[socket.slotId];
+        const offeredCard = offerer.hand.splice(cardIndex, 1)[0];
+        
+        gs.bank.push({ card: offeredCard, faceUp: false });
+        if (offeredCard.type === 'normal' && offeredCard.suit === gs.targetSuit) {
+            gs.lastOfferValue = offeredCard.val;
+        }
+
+        logRoom(room, `${offerer.name} položil kartu lícem dolů.`);
+
+        const requester = room.players[gs.activePlayer];
+        if (requester.isBot) {
+            botDecision(room, requester, aiCallbacks);
+        } else {
+            gs.phase = 'DECISION';
+            broadcastState(room);
+        }
     });
 
     socket.on('playerDecision', ({ action }) => {
@@ -231,6 +264,14 @@ function processOffer(room) {
     const gs = room.gameState;
     const offerer = room.players[gs.offererPlayer];
 
+    // Pokud je nabízející živý hráč, předáme mu možnost volby!
+    if (!offerer.isBot) {
+        gs.phase = 'OFFERER_CHOICE';
+        broadcastState(room);
+        return;
+    }
+
+    // Pokud je nabízející Bot:
     let validCards = offerer.hand.filter(c => c.type === 'normal' && c.suit === gs.targetSuit && c.val > gs.lastOfferValue);
     let chosenCardIndex = -1;
 
