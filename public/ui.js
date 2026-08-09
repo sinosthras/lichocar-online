@@ -1,228 +1,185 @@
-import { SUIT_ICONS } from './constants.js';
+import { sendSelectCardAndOfferer, sendOfferCard, sendPlayerDecision, sendAttachCard, sendReorderBank, sendFinishLaying } from './network.js';
 
-let uiCallbacks = {};
 let selectedCardIndex = null;
-let draggedSource = null;
 
-export function initUI(callbacks) {
-    uiCallbacks = callbacks;
-
-    document.getElementById('total-players').onchange = renderPlayerSetup;
-    renderPlayerSetup();
-
-    document.getElementById('btn-accept').onclick = () => uiCallbacks.onDecision('ACCEPT');
-    document.getElementById('btn-more').onclick = () => uiCallbacks.onDecision('MORE');
-    document.getElementById('btn-reject').onclick = () => uiCallbacks.onDecision('REJECT');
-    document.getElementById('btn-finish-lay').onclick = () => uiCallbacks.onFinishLaying();
+export function renderUI(state, socket) {
+    renderPlayers(state);
+    renderBank(state);
+    renderControls(state, socket);
+    renderHand(state, socket);
+    renderLogs(state);
 }
 
-export function renderPlayerSetup() {
-    const count = parseInt(document.getElementById('total-players').value);
-    const container = document.getElementById('player-slots-setup');
-    container.innerHTML = '';
-
-    for (let i = 0; i < count; i++) {
-        const div = document.createElement('div');
-        div.className = 'slot-row';
-        div.innerHTML = `
-            <label>Pozice ${i + 1} ${i === 0 ? '(Zakladatel)' : ''}:</label>
-            <select id="p-type-${i}">
-                <option value="human">Živý hráč</option>
-                <option value="bot" ${i > 0 ? 'selected' : ''}>Bot</option>
-            </select>
-        `;
-        container.appendChild(div);
-    }
-}
-
-export function render(localState) {
-    if (!localState) return;
-    const mySlotId = localState.mySlotId;
-    const mapSlot = (slot) => (slot - mySlotId + 4) % 4;
-
-    localState.players.forEach(p => {
-        const mappedPos = mapSlot(p.id);
-        const panel = document.getElementById(`p${mappedPos}`);
+function renderPlayers(state) {
+    state.players.forEach(p => {
+        const el = document.getElementById(`player-info-${p.id}`);
+        if (!el) return;
 
         if (!p.activeInGame) {
-            panel.classList.add('hidden');
+            el.innerHTML = `<strong>${p.name}</strong> (Neaktivní)`;
             return;
         }
-        panel.classList.remove('hidden');
 
-        if (mappedPos === 0) {
-            document.getElementById('p0-title').innerText = `${p.name} (VY)`;
+        const isCurrent = state.gameState && state.gameState.activePlayer === p.id;
+        let html = `<strong style="${isCurrent ? 'color: #d32f2f;' : ''}">${p.name}</strong>`;
+        html += `<br>Karet v ruce: ${p.cardCount}`;
+        html += `<br>Sady (${p.sets.length}): `;
+
+        // 4. Grafický tooltip sad po najetí myší
+        if (p.sets.length === 0) {
+            html += `<em>žádné</em>`;
         } else {
-            document.getElementById(`p${mappedPos}-title`).innerText = `${p.name} ${p.isBot ? '(Bot)' : ''}`;
-            document.getElementById(`p${mappedPos}-count`).innerText = p.cardCount;
-        }
-        document.getElementById(`p${mappedPos}-sets`).innerHTML = renderSetsHTML(p.sets);
+            p.sets.forEach((set, sIdx) => {
+                const cardPreviews = set.cards.map(c => 
+                    `<span class="card-mini ${c.suit}">${c.type === 'lichocar' ? '⚡' : c.val}</span>`
+                ).join('');
 
-        const gs = localState.gameState;
-        if (gs) {
-            panel.classList.toggle('active', gs.offererPlayer === p.id || (gs.activePlayer === p.id && gs.phase === 'CHOOSE_CARD_AND_OFFERER'));
+                html += `
+                    <span class="set-badge" style="position: relative; display: inline-block; margin-right: 5px; cursor: pointer; text-decoration: underline;">
+                        Sada ${sIdx + 1} (${set.cards.length})
+                        <div class="set-tooltip" style="display: none; position: absolute; bottom: 120%; left: 0; background: #222; padding: 6px; border-radius: 4px; z-index: 100; white-space: nowrap; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+                            ${cardPreviews}
+                        </div>
+                    </span>
+                `;
+            });
         }
 
-        if (mappedPos !== 0 && gs && gs.phase === 'CHOOSE_CARD_AND_OFFERER' && gs.activePlayer === mySlotId && selectedCardIndex !== null) {
-            panel.style.cursor = 'pointer';
-            panel.onclick = () => {
-                uiCallbacks.onChooseOfferer(selectedCardIndex, p.id);
-                selectedCardIndex = null;
-            };
-        } else if (mappedPos !== 0) {
-            panel.style.cursor = 'default';
-            panel.onclick = null;
-        }
+        el.innerHTML = html;
+
+        // Přidání hover eventů pro tooltip
+        el.querySelectorAll('.set-badge').forEach(badge => {
+            badge.addEventListener('mouseenter', () => {
+                const tt = badge.querySelector('.set-tooltip');
+                if (tt) tt.style.display = 'block';
+            });
+            badge.addEventListener('mouseleave', () => {
+                const tt = badge.querySelector('.set-tooltip');
+                if (tt) tt.style.display = 'none';
+            });
+        });
     });
+}
 
-    const myPlayer = localState.players[mySlotId];
-    const handBox = document.getElementById('p0-hand');
-    handBox.innerHTML = '';
-    const gs = localState.gameState;
+function renderBank(state) {
+    const container = document.getElementById('bank-cards');
+    if (!container) return;
+    container.innerHTML = '';
 
-    myPlayer.hand.forEach((card, idx) => {
-        const cDiv = document.createElement('div');
-        cDiv.draggable = true;
+    if (!state.gameState || !state.gameState.bank) return;
 
-        if (card.type === 'lichocar') {
-            cDiv.className = 'card lichocar';
-            cDiv.innerHTML = `😈`;
+    state.gameState.bank.forEach(b => {
+        const cardDiv = document.createElement('div');
+        cardDiv.className = 'card-slot';
+        if (b.faceUp && b.card) {
+            cardDiv.classList.add(b.card.suit);
+            cardDiv.innerText = b.card.type === 'lichocar' ? 'LICHOČÁR' : `${b.card.suit.toUpperCase()} ${b.card.val}`;
         } else {
-            cDiv.className = `card ${card.suit}`;
-            cDiv.innerHTML = `<div>${card.val}</div><div>${SUIT_ICONS[card.suit]}</div>`;
+            cardDiv.classList.add('facedown');
+            cardDiv.innerText = '🂠';
         }
-
-        let isLegitOffer = false;
-        if (gs) {
-            if (gs.phase === 'CHOOSE_CARD_AND_OFFERER' && gs.activePlayer === mySlotId) {
-                isLegitOffer = true;
-            } else if (gs.phase === 'OFFERING' && gs.offererPlayer === mySlotId) {
-                if (card.type === 'lichocar' || (card.suit === gs.targetSuit && card.val > gs.lastOfferValue)) {
-                    isLegitOffer = true;
-                }
-            } else if (gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === mySlotId) {
-                isLegitOffer = card.type !== 'lichocar';
-            }
-        }
-
-        if (isLegitOffer) cDiv.classList.add('highlighted');
-        else if (gs && (gs.phase === 'LAYING_CARDS' || gs.phase === 'OFFERING')) cDiv.classList.add('disabled');
-
-        if (selectedCardIndex === idx) cDiv.classList.add('selected');
-
-        cDiv.onclick = () => {
-            if (!gs) return;
-            if (gs.phase === 'CHOOSE_CARD_AND_OFFERER' && gs.activePlayer === mySlotId) {
-                selectedCardIndex = idx;
-                render(localState);
-            } else if (gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === mySlotId) {
-                uiCallbacks.onAttachCard(idx, null);
-            }
-        };
-
-        cDiv.ondragstart = () => { draggedSource = { source: 'hand', index: idx }; };
-        handBox.appendChild(cDiv);
+        container.appendChild(cardDiv);
     });
+}
 
-    const bankBox = document.getElementById('bank-cards');
-    bankBox.innerHTML = '';
+function renderControls(state, socket) {
+    const controls = document.getElementById('action-controls');
+    if (!controls) return;
+    controls.innerHTML = '';
 
-    if (!localState.started) {
-        document.getElementById('bank-status').innerText = 'Čeká se na připojení všech živých hráčů...';
-        return;
-    }
+    if (!state.gameState) return;
+    const gs = state.gameState;
+    const isMyTurn = gs.activePlayer === state.mySlotId;
 
-    if (gs) {
-        let displayCards = gs.phase === 'LAYING_CARDS' ? gs.layContext.cardsFromBank : gs.bank;
-        
-        if (gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === mySlotId) {
-            bankBox.appendChild(createDropSlot(0, localState));
-        }
-
-        displayCards.forEach((item, idx) => {
-            const card = item.card || item;
-            const cDiv = document.createElement('div');
-            cDiv.draggable = (gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === mySlotId);
-
-            if (item.faceUp || gs.phase === 'LAYING_CARDS') {
-                if (card.type === 'lichocar') {
-                    cDiv.className = 'card lichocar';
-                    cDiv.innerHTML = `😈`;
-                } else {
-                    cDiv.className = `card ${card.suit}`;
-                    cDiv.innerHTML = `<div>${card.val}</div><div>${SUIT_ICONS[card.suit]}</div>`;
-                }
-                if (gs.phase === 'LAYING_CARDS') {
-                    if (gs.validSetCardIndices && gs.validSetCardIndices[idx]) {
-                        cDiv.classList.add('valid-set');
-                    } else {
-                        cDiv.classList.add('invalid-set');
+    if (gs.phase === 'CHOOSE_CARD_AND_OFFERER' && isMyTurn) {
+        controls.innerText = 'Vyber kartu z ruky a zvol hráče, kterého vyzveš:';
+        state.players.forEach(p => {
+            if (p.id !== state.mySlotId && p.activeInGame) {
+                const btn = document.createElement('button');
+                btn.innerText = `Vyzvat ${p.name}`;
+                btn.onclick = () => {
+                    if (selectedCardIndex === null) {
+                        alert('Nejprve vyber kartu v ruce!');
+                        return;
                     }
-                }
-            } else {
-                cDiv.className = 'card back';
-                cDiv.innerText = '?';
-            }
-
-            cDiv.ondragstart = () => { draggedSource = { source: 'bank', index: idx }; };
-            bankBox.appendChild(cDiv);
-
-            if (gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === mySlotId) {
-                bankBox.appendChild(createDropSlot(idx + 1, localState));
+                    sendSelectCardAndOfferer(socket, selectedCardIndex, p.id);
+                    selectedCardIndex = null;
+                };
+                controls.appendChild(btn);
             }
         });
+    } else if (gs.phase === 'OFFERER_CHOICE' && gs.offererPlayer === state.mySlotId) {
+        controls.innerText = 'Byl jste vyzván v nabídce. Vyberte kartu ze své ruky, kterou položíte lícem dolů:';
+        const btn = document.createElement('button');
+        btn.innerText = 'Potvrdit vybranou kartu';
+        btn.onclick = () => {
+            if (selectedCardIndex === null) {
+                alert('Vyberte kartu ze své ruky!');
+                return;
+            }
+            sendOfferCard(socket, selectedCardIndex);
+            selectedCardIndex = null;
+        };
+        controls.appendChild(btn);
+    } else if (gs.phase === 'DECISION' && isMyTurn) {
+        const bMore = document.createElement('button');
+        bMore.innerText = 'Chci ještě!';
+        bMore.onclick = () => sendPlayerDecision(socket, 'MORE');
 
-        const isMyDecision = gs.phase === 'DECISION' && gs.activePlayer === mySlotId;
-        const isMyLaying = gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === mySlotId;
+        const bAcc = document.createElement('button');
+        bAcc.innerText = 'Přijímám nabídku';
+        bAcc.onclick = () => sendPlayerDecision(socket, 'ACCEPT');
 
-        document.getElementById('btn-accept').disabled = !isMyDecision;
-        document.getElementById('btn-more').disabled = !isMyDecision;
-        document.getElementById('btn-reject').disabled = !isMyDecision;
-        document.getElementById('btn-finish-lay').disabled = !isMyLaying;
+        const bRej = document.createElement('button');
+        bRej.innerText = 'Odmítám nabídku';
+        bRej.onclick = () => sendPlayerDecision(socket, 'REJECT');
 
-        const statusBox = document.getElementById('bank-status');
-        if (gs.phase === 'CHOOSE_CARD_AND_OFFERER' && gs.activePlayer === mySlotId) {
-            statusBox.innerText = selectedCardIndex !== null ? 'Nyní klikněte na protihráče!' : 'Vyberte kartu ze své ruky.';
-        } else if (isMyDecision) {
-            statusBox.innerText = 'Vaše volba! Přijmete, odmítnete, nebo chcete ještě?';
-        } else if (isMyLaying) {
-            statusBox.innerText = `Přikládání (${gs.layContext.attachedCount}/${gs.layContext.maxAttachCount}). Zeleně svítící karty tvoří platnou sadu.`;
-        } else {
-            statusBox.innerText = `Na tahu je ${localState.players[gs.activePlayer].name}.`;
-        }
-
-        const logBox = document.getElementById('log-box');
-        logBox.innerHTML = gs.logs.map(l => `> ${l}`).join('<br>');
-        logBox.scrollTop = logBox.scrollHeight;
+        controls.appendChild(bMore);
+        controls.appendChild(bAcc);
+        controls.appendChild(bRej);
+    } else if (gs.phase === 'LAYING_CARDS' && gs.layContext.playerId === state.mySlotId) {
+        const bFinish = document.createElement('button');
+        bFinish.innerText = 'Dokončit vykládání';
+        bFinish.onclick = () => sendFinishLaying(socket);
+        controls.appendChild(bFinish);
     }
 }
 
-function createDropSlot(idx, localState) {
-    const slot = document.createElement('div');
-    slot.className = 'drop-slot';
-    slot.ondragover = (e) => { e.preventDefault(); slot.classList.add('drag-over'); };
-    slot.ondragleave = () => slot.classList.remove('drag-over');
-    slot.ondrop = (e) => {
-        e.preventDefault();
-        slot.classList.remove('drag-over');
-        if (!draggedSource) return;
-        if (draggedSource.source === 'hand') {
-            uiCallbacks.onAttachCard(draggedSource.index, idx);
-        } else if (draggedSource.source === 'bank') {
-            uiCallbacks.onReorderBank(draggedSource.index, idx);
+function renderHand(state, socket) {
+    const container = document.getElementById('my-hand');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const myPlayer = state.players.find(p => p.id === state.mySlotId);
+    if (!myPlayer || !myPlayer.hand) return;
+
+    const gs = state.gameState;
+
+    myPlayer.hand.forEach((card, idx) => {
+        const cardDiv = document.createElement('div');
+        cardDiv.className = `card ${card.suit}`;
+        cardDiv.innerText = card.type === 'lichocar' ? 'LICHOČÁR' : `${card.suit.toUpperCase()} ${card.val}`;
+
+        // 1. ZÁKAZ Lichočára pro zahájení nabídky
+        if (gs && gs.phase === 'CHOOSE_CARD_AND_OFFERER' && gs.activePlayer === state.mySlotId && card.type === 'lichocar') {
+            cardDiv.classList.add('disabled');
+            cardDiv.style.opacity = '0.4';
+            cardDiv.style.cursor = 'not-allowed';
+        } else {
+            if (selectedCardIndex === idx) cardDiv.classList.add('selected');
+            cardDiv.onclick = () => {
+                selectedCardIndex = idx;
+                renderHand(state, socket);
+            };
         }
-        draggedSource = null;
-    };
-    return slot;
+
+        container.appendChild(cardDiv);
+    });
 }
 
-function renderSetsHTML(sets) {
-    if (!sets || sets.length === 0) return '<i>Žádné</i>';
-    return sets.map(s => {
-        let label = "";
-        if (s.type === 'barva') label = `${SUIT_ICONS[s.cards[0].suit]} Barva (${s.cards.length})`;
-        else if (s.type === 'cislo') label = `Stejné č. ${s.cards[0].val} (${s.cards.length})`;
-        else if (s.type === 'postupka') label = `Postupka ${s.cards[0].val}-${s.cards[s.cards.length-1].val} (${s.cards.length})`;
-        return `<span class="set-group">${label}</span>`;
-    }).join(' ');
+function renderLogs(state) {
+    const container = document.getElementById('game-logs');
+    if (!container || !state.gameState) return;
+    container.innerHTML = state.gameState.logs.map(l => `<div>${l}</div>`).join('');
+    container.scrollTop = container.scrollHeight;
 }
